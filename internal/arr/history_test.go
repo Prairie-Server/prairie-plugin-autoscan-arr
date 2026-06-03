@@ -45,7 +45,7 @@ func TestChangedPathsFutureDateMarker(t *testing.T) {
 
 	// Caller marker is 2 hours in the future (simulating clock skew).
 	futureMarker := now.Add(2 * time.Hour)
-	_, newest, err := ChangedPaths(context.Background(), srv.URL, "k", futureMarker)
+	_, newest, err := ChangedPaths(context.Background(), srv.URL, "k", Marker{Date: futureMarker})
 	if err != nil {
 		t.Fatalf("ChangedPaths: %v", err)
 	}
@@ -55,8 +55,8 @@ func TestChangedPathsFutureDateMarker(t *testing.T) {
 	}
 
 	// The returned marker must not be in the future.
-	if newest.After(now.Add(time.Minute)) {
-		t.Fatalf("returned marker %v is in the future (now=%v); future marker was not clamped", newest, now)
+	if newest.Date.After(now.Add(time.Minute)) {
+		t.Fatalf("returned marker %v is in the future (now=%v); future marker was not clamped", newest.Date, now)
 	}
 }
 
@@ -113,7 +113,7 @@ func TestChangedPaths(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	paths, newest, err := ChangedPaths(context.Background(), srv.URL, "k", time.Unix(0, 0).UTC())
+	paths, newest, err := ChangedPaths(context.Background(), srv.URL, "k", Marker{Date: time.Unix(0, 0).UTC()})
 	if err != nil {
 		t.Fatalf("ChangedPaths: %v", err)
 	}
@@ -135,8 +135,8 @@ func TestChangedPaths(t *testing.T) {
 	}
 	// newest should track the most recent history timestamp seen (the deleted
 	// event at offset 0 is the latest date even though its path is ignored).
-	if !newest.Equal(newestEvent) {
-		t.Fatalf("newest = %v, want %v", newest, newestEvent)
+	if !newest.Date.Equal(newestEvent) {
+		t.Fatalf("newest = %v, want %v", newest.Date, newestEvent)
 	}
 }
 
@@ -152,7 +152,7 @@ func TestChangedPathsClampsLookbackToFloor(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, _, err := ChangedPaths(context.Background(), srv.URL, "k", time.Unix(0, 0).UTC())
+	_, _, err := ChangedPaths(context.Background(), srv.URL, "k", Marker{Date: time.Unix(0, 0).UTC()})
 	if err != nil {
 		t.Fatalf("ChangedPaths: %v", err)
 	}
@@ -162,6 +162,7 @@ func TestChangedPathsClampsLookbackToFloor(t *testing.T) {
 }
 
 func TestChangedPathsEmptyMarkerUsesNow(t *testing.T) {
+	now := time.Now().UTC()
 	var hit bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hit = true
@@ -169,16 +170,22 @@ func TestChangedPathsEmptyMarkerUsesNow(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, newest, err := ChangedPaths(context.Background(), srv.URL, "k", time.Time{})
+	_, newest, err := ChangedPaths(context.Background(), srv.URL, "k", Marker{})
 	if err != nil {
 		t.Fatalf("ChangedPaths: %v", err)
 	}
 	if !hit {
 		t.Fatal("expected arr to be called")
 	}
-	// Empty marker => poll from ~now (minus overlap).
-	if newest.IsZero() {
+	if newest.Date.IsZero() {
 		t.Fatal("newest should not be zero")
+	}
+	// Fix 2: a first poll with no records must seed the marker from the effective
+	// since (~now), NOT since-overlap. The overlap is still QUERIED (the query
+	// window rewinds by overlap), but the RETURNED floor must be ~now so the
+	// overlap window is not replayed on the next poll.
+	if newest.Date.Before(now.Add(-overlap / 2)) {
+		t.Fatalf("empty-poll marker %v is behind ~now (now=%v); it must seed from since, not since-overlap", newest.Date, now)
 	}
 }
 
@@ -249,7 +256,7 @@ func TestChangedPathsPaginates(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	paths, newest, err := ChangedPaths(context.Background(), srv.URL, "k", callerMarker)
+	paths, newest, err := ChangedPaths(context.Background(), srv.URL, "k", Marker{Date: callerMarker})
 	if err != nil {
 		t.Fatalf("ChangedPaths: %v", err)
 	}
@@ -281,8 +288,8 @@ func TestChangedPathsPaginates(t *testing.T) {
 
 	// newest must be the most recent record date (page1 records at now-30m).
 	wantNewest := now.Add(-30 * time.Minute).Truncate(time.Second)
-	if newest.Before(wantNewest.Add(-2*time.Second)) || newest.After(wantNewest.Add(2*time.Second)) {
-		t.Fatalf("newest = %v, want ~%v", newest, wantNewest)
+	if newest.Date.Before(wantNewest.Add(-2*time.Second)) || newest.Date.After(wantNewest.Add(2*time.Second)) {
+		t.Fatalf("newest = %v, want ~%v", newest.Date, wantNewest)
 	}
 }
 
@@ -316,7 +323,7 @@ func TestChangedPathsBoundaryDedup(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	paths, newest, err := ChangedPaths(context.Background(), srv.URL, "k", T)
+	paths, newest, err := ChangedPaths(context.Background(), srv.URL, "k", Marker{Date: T})
 	if err != nil {
 		t.Fatalf("ChangedPaths: %v", err)
 	}
@@ -327,8 +334,89 @@ func TestChangedPathsBoundaryDedup(t *testing.T) {
 	}
 
 	// newest must be afterT (the most recent timestamp seen).
-	if !newest.Equal(afterT) {
-		t.Fatalf("newest = %v, want %v", newest, afterT)
+	if !newest.Date.Equal(afterT) {
+		t.Fatalf("newest = %v, want %v", newest.Date, afterT)
+	}
+}
+
+// TestChangedPathsSameSecondStragglerNotDropped is the regression test for the
+// composite (date, id) marker. Two records share the SAME second-granularity
+// date but have different ids. Poll A only sees the lower-id record and advances
+// the marker to (date, lowerID). Poll B then sees BOTH records but must still
+// emit the higher-id record sharing that second — under a bare-timestamp marker
+// it would have been filtered out forever by `!date.After(marker)`.
+func TestChangedPathsSameSecondStragglerNotDropped(t *testing.T) {
+	now := time.Now().UTC()
+	// Both records land on the exact same second.
+	sameSecond := now.Add(-10 * time.Minute).Truncate(time.Second)
+	lowID := 100
+	highID := 200
+
+	mk := func(id int, path string) historyRecord {
+		return historyRecord{
+			ID:        id,
+			EventType: eventImported,
+			Date:      sameSecond,
+			Data: struct {
+				ImportedPath string `json:"importedPath"`
+				Path         string `json:"path"`
+				SourcePath   string `json:"sourcePath"`
+			}{ImportedPath: path},
+		}
+	}
+
+	// Poll A: arr only exposes the lower-id record (simulating a page-bounded poll
+	// that stopped mid-second before reaching the higher-id straggler).
+	pollA := []historyRecord{mk(lowID, "/media/first.mkv")}
+	// Poll B: arr now exposes BOTH records sharing the second, date-descending by
+	// id. The marker from poll A points at (sameSecond, lowID); only the higher-id
+	// straggler must be (re-)emitted.
+	pollB := []historyRecord{mk(highID, "/media/straggler.mkv"), mk(lowID, "/media/first.mkv")}
+
+	phase := "A"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		recs := pollA
+		if phase == "B" {
+			recs = pollB
+		}
+		_, _ = w.Write([]byte(pagedBody(1, historyPageSize, len(recs), recs)))
+	}))
+	defer srv.Close()
+
+	// Caller marker before the same-second records so poll A emits the low-id one.
+	callerMarker := Marker{Date: sameSecond.Add(-1 * time.Minute)}
+
+	pathsA, markerA, err := ChangedPaths(context.Background(), srv.URL, "k", callerMarker)
+	if err != nil {
+		t.Fatalf("poll A: %v", err)
+	}
+	if len(pathsA) != 1 || pathsA[0] != "/media/first.mkv" {
+		t.Fatalf("poll A paths = %v, want [/media/first.mkv]", pathsA)
+	}
+	// Marker must have advanced to the composite (sameSecond, lowID).
+	if !markerA.Date.Equal(sameSecond) || markerA.ID != lowID {
+		t.Fatalf("poll A marker = {%v,%d}, want {%v,%d}", markerA.Date, markerA.ID, sameSecond, lowID)
+	}
+
+	// Round-trip the marker through its string form exactly as the host would.
+	roundTripped, err := ParseMarker(markerA.String())
+	if err != nil {
+		t.Fatalf("round-trip marker %q: %v", markerA.String(), err)
+	}
+
+	phase = "B"
+	pathsB, markerB, err := ChangedPaths(context.Background(), srv.URL, "k", roundTripped)
+	if err != nil {
+		t.Fatalf("poll B: %v", err)
+	}
+	// The same-second straggler (higher id) MUST be emitted; the already-seen
+	// lower-id record (== marker) must NOT be re-emitted.
+	if len(pathsB) != 1 || pathsB[0] != "/media/straggler.mkv" {
+		t.Fatalf("poll B paths = %v, want [/media/straggler.mkv] (same-second straggler must not be dropped)", pathsB)
+	}
+	// Marker advances to the higher-id record within the same second.
+	if !markerB.Date.Equal(sameSecond) || markerB.ID != highID {
+		t.Fatalf("poll B marker = {%v,%d}, want {%v,%d}", markerB.Date, markerB.ID, sameSecond, highID)
 	}
 }
 
@@ -352,7 +440,7 @@ func TestChangedPathsLargeSinglePageCapped(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, _, err := ChangedPaths(context.Background(), srv.URL, "k", time.Time{})
+	_, _, err := ChangedPaths(context.Background(), srv.URL, "k", Marker{})
 	if err == nil {
 		t.Fatal("expected error when single page body exceeds 1 MiB LimitReader cap, but got nil")
 	}
@@ -386,7 +474,7 @@ func TestChangedPathsPageCapBoundsWork(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, _, err := ChangedPaths(context.Background(), srv.URL, "k", now.Add(-2*time.Minute))
+	_, _, err := ChangedPaths(context.Background(), srv.URL, "k", Marker{Date: now.Add(-2 * time.Minute)})
 	if err != nil {
 		t.Fatalf("ChangedPaths: %v", err)
 	}

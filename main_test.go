@@ -10,6 +10,8 @@ import (
 	"time"
 
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
+
+	"github.com/Silo-Server/silo-plugin-autoscan-arr/internal/arr"
 )
 
 // pagedEnvelope wraps a flat JSON records slice into a paged arr history envelope.
@@ -80,8 +82,10 @@ func TestPollChangesReturnsRawArrPaths(t *testing.T) {
 	if resp.GetNextMarker() == "" {
 		t.Fatal("expected a non-empty next_marker")
 	}
-	if _, err := time.Parse(time.RFC3339, resp.GetNextMarker()); err != nil {
-		t.Fatalf("next_marker %q is not RFC3339: %v", resp.GetNextMarker(), err)
+	// next_marker is now the composite "<RFC3339>|<id>" form; it must round-trip
+	// through arr.ParseMarker.
+	if _, err := arr.ParseMarker(resp.GetNextMarker()); err != nil {
+		t.Fatalf("next_marker %q does not parse: %v", resp.GetNextMarker(), err)
 	}
 }
 
@@ -120,19 +124,19 @@ func TestPollChangesSecondCallUsesReturnedMarker(t *testing.T) {
 		t.Fatalf("expected at least 2 arr requests, got %d", len(pages))
 	}
 
-	markerTime, err := time.Parse(time.RFC3339, marker)
+	firstMarker, err := arr.ParseMarker(marker)
 	if err != nil {
 		t.Fatalf("parse first marker %q: %v", marker, err)
 	}
 
 	// The RETURNED marker must NOT regress below the caller's marker, even
 	// though the query window rewound by the overlap.
-	secondMarker, err := time.Parse(time.RFC3339, second.GetNextMarker())
+	secondMarker, err := arr.ParseMarker(second.GetNextMarker())
 	if err != nil {
 		t.Fatalf("parse second marker %q: %v", second.GetNextMarker(), err)
 	}
-	if secondMarker.Before(markerTime) {
-		t.Fatalf("returned marker regressed: %v < caller marker %v", secondMarker, markerTime)
+	if secondMarker.Date.Before(firstMarker.Date) {
+		t.Fatalf("returned marker regressed: %v < caller marker %v", secondMarker.Date, firstMarker.Date)
 	}
 }
 
@@ -159,12 +163,12 @@ func TestPollChangesEmptyPollDoesNotRegressMarker(t *testing.T) {
 		t.Fatalf("expected no source paths, got %v", resp.GetSourcePaths())
 	}
 
-	got, err := time.Parse(time.RFC3339, resp.GetNextMarker())
+	got, err := arr.ParseMarker(resp.GetNextMarker())
 	if err != nil {
 		t.Fatalf("parse returned marker %q: %v", resp.GetNextMarker(), err)
 	}
-	if got.Before(prev) {
-		t.Fatalf("empty-poll marker regressed: got %v, want >= caller marker %v (not prev-overlap)", got, prev)
+	if got.Date.Before(prev) {
+		t.Fatalf("empty-poll marker regressed: got %v, want >= caller marker %v (not prev-overlap)", got.Date, prev)
 	}
 }
 

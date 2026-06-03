@@ -16,7 +16,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"time"
 
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 	publicmanifest "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/manifest"
@@ -55,20 +54,21 @@ type scanSourceServer struct {
 
 // PollChanges reads the connection from the request (never from config), polls
 // arr history since the supplied marker, and returns the raw arr-side paths
-// plus the next marker (RFC3339). The host applies path rewrites.
+// plus the next marker. The host applies path rewrites.
+//
+// The incoming marker is parsed via arr.ParseMarker, which accepts both the
+// composite "<RFC3339>|<id>" form and a bare RFC3339 timestamp for backward
+// compatibility with already-stored markers. The outgoing NextMarker is always
+// emitted in the composite form. The host treats the marker as opaque.
 func (s *scanSourceServer) PollChanges(ctx context.Context, req *pluginv1.PollChangesRequest) (*pluginv1.PollChangesResponse, error) {
 	conn := req.GetConnection()
 	if conn == nil || conn.GetBaseUrl() == "" {
 		return nil, fmt.Errorf("scan_source: no connection supplied")
 	}
 
-	var since time.Time // zero => history client floors to "now"
-	if m := req.GetMarker(); m != "" {
-		t, err := time.Parse(time.RFC3339, m)
-		if err != nil {
-			return nil, fmt.Errorf("scan_source: invalid marker %q: %w", m, err)
-		}
-		since = t
+	since, err := arr.ParseMarker(req.GetMarker()) // empty => zero Marker => floor to "now"
+	if err != nil {
+		return nil, fmt.Errorf("scan_source: invalid marker %q: %w", req.GetMarker(), err)
 	}
 
 	raw, newest, err := arr.ChangedPaths(ctx, conn.GetBaseUrl(), conn.GetApiKey(), since)
@@ -78,7 +78,7 @@ func (s *scanSourceServer) PollChanges(ctx context.Context, req *pluginv1.PollCh
 
 	return &pluginv1.PollChangesResponse{
 		SourcePaths: raw,
-		NextMarker:  newest.UTC().Format(time.RFC3339),
+		NextMarker:  newest.String(),
 	}, nil
 }
 
