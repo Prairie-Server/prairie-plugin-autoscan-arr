@@ -189,6 +189,30 @@ func TestChangedPathsEmptyMarkerUsesNow(t *testing.T) {
 	}
 }
 
+// TestChangedPathsIdlePollPreservesMarkerID verifies that an idle poll (no
+// records newer than the caller's marker) returns the caller's FULL (Date, ID)
+// composite marker, not just its Date. Seeding the returned floor from the date
+// alone would regress the id tiebreak to 0 and re-emit already-seen same-second
+// records on the next poll.
+func TestChangedPathsIdlePollPreservesMarkerID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(pagedBody(1, historyPageSize, 0, nil)))
+	}))
+	defer srv.Close()
+
+	// A recent marker (within the lookback window, not future) with a non-zero id.
+	markerDate := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
+	caller := Marker{Date: markerDate, ID: 123}
+
+	_, newest, err := ChangedPaths(context.Background(), srv.URL, "k", caller)
+	if err != nil {
+		t.Fatalf("ChangedPaths: %v", err)
+	}
+	if !newest.Date.Equal(markerDate) || newest.ID != 123 {
+		t.Fatalf("idle poll regressed the marker: got %s, want %s", newest.String(), caller.String())
+	}
+}
+
 // TestChangedPathsPaginates verifies that ChangedPaths pages through multiple
 // pages of arr history, collects paths from all pages, and stops paging once a
 // record with date <= querySince is encountered (date-descending order).

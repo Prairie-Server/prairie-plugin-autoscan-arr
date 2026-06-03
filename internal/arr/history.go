@@ -37,8 +37,14 @@ const overlap = 1 * time.Minute
 // of 200 records stays well under the 1 MiB per-page body cap.
 const historyPageSize = 200
 
-// maxHistoryPages caps the total pages fetched per poll to bound work.
-const maxHistoryPages = 50
+// maxHistoryPages caps the total pages fetched per poll to bound work. Normal
+// polls break out after one or two pages (the marker boundary or a short page);
+// the cap only bites during a burst, so it is set generously — maxHistoryPages*
+// historyPageSize is the per-poll change-event budget. Events beyond it in a
+// single interval are skipped (see the page-cap warning in ChangedPaths), since
+// arr's offset-paginated, newest-first /history cannot be resumed into deeper
+// pages on a later poll.
+const maxHistoryPages = 100
 
 // historyRecord is the subset of an arr history entry we care about. ID is the
 // arr-side monotonic record identifier; it is the tiebreaker for records that
@@ -192,8 +198,8 @@ func ChangedPaths(ctx context.Context, baseURL, apiKey string, since Marker) (pa
 	// effective "from now" point and replay the overlap window next call. Never
 	// regress below the caller's original marker either.
 	newest = Marker{Date: sinceDate}
-	if marker.Date.After(newest.Date) {
-		newest = marker
+	if markerLess(newest, marker) {
+		newest = marker // preserve the caller's full (Date, ID) so an idle poll never regresses the id tiebreak
 	}
 
 	reachedBoundary := false
@@ -260,10 +266,20 @@ func ChangedPaths(ctx context.Context, baseURL, apiKey string, since Marker) (pa
 	}
 
 	if !reachedBoundary {
+		// The marker still advances to the newest record seen, so the NEXT poll
+		// skips everything at or below it. arr's /history is newest-first,
+		// offset-paginated, and has no server-side date filter, so we cannot
+		// resume into the older pages we did not reach this run — they fall below
+		// the advanced marker and are NOT recovered later. This only triggers when
+		// more than maxHistoryPages*historyPageSize change events land in a single
+		// poll interval (a large burst); the oldest events of that burst are
+		// skipped. Mitigate with a shorter poll interval (smaller per-interval
+		// delta) or a larger page budget — not by relying on a future poll.
 		slog.Warn("arr history page cap hit before reaching the marker boundary; "+
-			"more history exists than one poll consumed, records will be processed "+
-			"across subsequent polls",
-			"max_pages", maxHistoryPages, "page_size", historyPageSize)
+			"oldest events from this burst will be skipped — shorten the poll "+
+			"interval or raise the page budget",
+			"max_pages", maxHistoryPages, "page_size", historyPageSize,
+			"per_poll_event_budget", maxHistoryPages*historyPageSize)
 	}
 
 	return paths, newest, nil
