@@ -16,7 +16,8 @@ func TestEmbeddedManifestLoads(t *testing.T) {
 	if m.GetCapabilities()[0].GetId() != "arr" {
 		t.Fatalf("capability id = %q", m.GetCapabilities()[0].GetId())
 	}
-	if len(m.GetGlobalConfigSchema()) != 1 || m.GetGlobalConfigSchema()[0].GetKey() != "path_rewrites" {
-		t.Fatalf("global_config_schema = %+v", m.GetGlobalConfigSchema())
+	// The plugin has no config; path rewrites are owned by the host.
+	if len(m.GetGlobalConfigSchema()) != 0 {
+		t.Fatalf("global_config_schema should be empty, got %+v", m.GetGlobalConfigSchema())
 	}
 }

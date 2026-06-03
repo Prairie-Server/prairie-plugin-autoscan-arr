@@ -9,11 +9,9 @@ import (
 	"time"
 
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
-
-	"github.com/Silo-Server/silo-plugin-autoscan-arr/internal/config"
 )
 
-func TestPollChangesReturnsSiloNativePaths(t *testing.T) {
+func TestPollChangesReturnsRawArrPaths(t *testing.T) {
 	const apiKey = "secret-key"
 	recent := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
 	body := `[
@@ -31,11 +29,7 @@ func TestPollChangesReturnsSiloNativePaths(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rt := &runtimeServer{cfg: &config.Config{Rewrites: []config.Rewrite{
-		{From: "/data/arr/tv", To: "/mnt/media/tv"},
-		{From: "/data/arr/movies", To: "/mnt/media/movies"},
-	}}}
-	s := &scanSourceServer{rt: rt}
+	s := &scanSourceServer{}
 
 	resp, err := s.PollChanges(context.Background(), &pluginv1.PollChangesRequest{
 		CapabilityId: "arr",
@@ -55,19 +49,20 @@ func TestPollChangesReturnsSiloNativePaths(t *testing.T) {
 		t.Fatal("expected a date query param on the arr request")
 	}
 
-	got := append([]string(nil), resp.GetChangedPaths()...)
+	// The plugin returns raw arr paths; the host applies rewrites.
+	got := append([]string(nil), resp.GetSourcePaths()...)
 	sort.Strings(got)
 	want := []string{
-		"/mnt/media/movies/Heat/Heat new.mkv",
-		"/mnt/media/movies/Heat/Heat old.mkv",
-		"/mnt/media/tv/Show/S01/E01.mkv",
+		"/data/arr/movies/Heat/Heat new.mkv",
+		"/data/arr/movies/Heat/Heat old.mkv",
+		"/data/arr/tv/Show/S01/E01.mkv",
 	}
 	if len(got) != len(want) {
-		t.Fatalf("ChangedPaths = %v, want %v", got, want)
+		t.Fatalf("SourcePaths = %v, want %v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("ChangedPaths = %v, want %v", got, want)
+			t.Fatalf("SourcePaths = %v, want %v", got, want)
 		}
 	}
 
@@ -88,7 +83,7 @@ func TestPollChangesSecondCallUsesReturnedMarker(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &scanSourceServer{rt: &runtimeServer{cfg: &config.Config{}}}
+	s := &scanSourceServer{}
 	conn := &pluginv1.ResolvedConnection{BaseUrl: srv.URL, ApiKey: "k"}
 
 	first, err := s.PollChanges(context.Background(), &pluginv1.PollChangesRequest{Connection: conn})
@@ -146,7 +141,7 @@ func TestPollChangesEmptyPollDoesNotRegressMarker(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &scanSourceServer{rt: &runtimeServer{cfg: &config.Config{}}}
+	s := &scanSourceServer{}
 	conn := &pluginv1.ResolvedConnection{BaseUrl: srv.URL, ApiKey: "k"}
 
 	prev := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
@@ -157,8 +152,8 @@ func TestPollChangesEmptyPollDoesNotRegressMarker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PollChanges: %v", err)
 	}
-	if len(resp.GetChangedPaths()) != 0 {
-		t.Fatalf("expected no changed paths, got %v", resp.GetChangedPaths())
+	if len(resp.GetSourcePaths()) != 0 {
+		t.Fatalf("expected no source paths, got %v", resp.GetSourcePaths())
 	}
 
 	got, err := time.Parse(time.RFC3339, resp.GetNextMarker())
@@ -171,7 +166,7 @@ func TestPollChangesEmptyPollDoesNotRegressMarker(t *testing.T) {
 }
 
 func TestPollChangesNilConnectionErrors(t *testing.T) {
-	s := &scanSourceServer{rt: &runtimeServer{cfg: &config.Config{}}}
+	s := &scanSourceServer{}
 
 	if _, err := s.PollChanges(context.Background(), &pluginv1.PollChangesRequest{}); err == nil {
 		t.Fatal("expected error for nil connection")

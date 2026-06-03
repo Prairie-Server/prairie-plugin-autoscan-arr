@@ -1,5 +1,5 @@
 // Package arr polls a Sonarr/Radarr instance's history for recently-changed
-// file paths and rewrites them to Silo-native library paths.
+// file paths. Paths are returned as-is (raw arr-side); the host applies rewrites.
 package arr
 
 import (

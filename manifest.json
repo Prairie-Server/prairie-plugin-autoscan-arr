@@ -25,13 +25,5 @@
       "description": "Triggers Silo rescans from Sonarr/Radarr import and rename history."
     }
   ],
-  "global_config_schema": [
-    {
-      "key": "path_rewrites",
-      "title": "Path rewrites",
-      "description": "Prefix rewrites mapping arr file paths to Silo-native library paths. JSON array of {\"from\",\"to\"} objects.",
-      "required": false,
-      "json_schema": "{\"type\":\"object\",\"properties\":{\"path_rewrites\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"from\":{\"type\":\"string\"},\"to\":{\"type\":\"string\"}},\"required\":[\"from\",\"to\"],\"additionalProperties\":false}}},\"additionalProperties\":false}"
-    }
-  ]
+  "global_config_schema": []
 }

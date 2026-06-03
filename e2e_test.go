@@ -88,15 +88,16 @@ func TestEndToEndPollChangesOverGRPC(t *testing.T) {
 		t.Fatal("plugin never called the stub arr")
 	}
 
-	// The imported path must come back (grabbed ignored); marker non-empty.
+	// The raw arr-side imported path must come back (grabbed ignored); no
+	// rewriting applied — the host owns that. Marker non-empty.
 	var found bool
-	for _, p := range resp.GetChangedPaths() {
+	for _, p := range resp.GetSourcePaths() {
 		if p == importedPath {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("imported path missing from %v", resp.GetChangedPaths())
+		t.Fatalf("imported path missing from source_paths %v", resp.GetSourcePaths())
 	}
 	if resp.GetNextMarker() == "" {
 		t.Fatal("expected a non-empty next_marker")
