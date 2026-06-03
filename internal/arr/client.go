@@ -27,6 +27,10 @@ type client struct {
 	httpClient *http.Client
 }
 
+// newClient builds an arr HTTP client. The base URL is trimmed of trailing
+// slashes and surrounding whitespace, the api key is trimmed, and a default
+// 30s-timeout http.Client is used when httpClient is nil (tests inject their
+// own).
 func newClient(baseURL, apiKey string, httpClient *http.Client) *client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: defaultTimeout}

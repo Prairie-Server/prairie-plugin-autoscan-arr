@@ -10,10 +10,17 @@ import (
 	"time"
 )
 
+// arr history eventType values that carry a file path worth rescanning. Other
+// event types (grabbed, *FileDeleted, etc.) are intentionally ignored.
 const (
-	eventImported       = "downloadFolderImported"
+	// eventImported is a completed import; Data.ImportedPath is the new file.
+	eventImported = "downloadFolderImported"
+	// eventEpisodeRenamed is a Sonarr rename; Data.Path is the new path and
+	// Data.SourcePath the old one.
 	eventEpisodeRenamed = "episodeFileRenamed"
-	eventMovieRenamed   = "movieFileRenamed"
+	// eventMovieRenamed is a Radarr rename; Data.Path is the new path and
+	// Data.SourcePath the old one.
+	eventMovieRenamed = "movieFileRenamed"
 )
 
 // maxLookback floors how far back ChangedPaths will poll. A stale or absent

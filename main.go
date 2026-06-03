@@ -37,6 +37,9 @@ type runtimeServer struct {
 	manifest *pluginv1.PluginManifest
 }
 
+// GetManifest returns the plugin's embedded manifest (with the build-time
+// version and computed binary checksum) so the host can register the plugin's
+// capabilities.
 func (s *runtimeServer) GetManifest(context.Context, *pluginv1.GetManifestRequest) (*pluginv1.GetManifestResponse, error) {
 	return &pluginv1.GetManifestResponse{Manifest: s.manifest}, nil
 }
@@ -82,6 +85,8 @@ func (s *scanSourceServer) PollChanges(ctx context.Context, req *pluginv1.PollCh
 	}, nil
 }
 
+// main loads the embedded manifest and serves the plugin's Runtime and
+// ScanSource capabilities over the go-plugin gRPC transport the host drives.
 func main() {
 	manifest, err := loadManifest()
 	if err != nil {
@@ -98,6 +103,9 @@ func main() {
 	})
 }
 
+// loadManifest parses the embedded manifest.json, overrides its version with
+// the build-time main.version when set, and stamps the manifest Checksum with
+// the SHA-256 of the running executable so the host can verify the binary.
 func loadManifest() (*pluginv1.PluginManifest, error) {
 	manifest, err := publicmanifest.Load(manifestJSON)
 	if err != nil {
