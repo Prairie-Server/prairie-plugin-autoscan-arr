@@ -17,12 +17,30 @@ func TestApplyRewrites(t *testing.T) {
 			t.Fatalf("ApplyRewrites(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
+	// Most-specific match wins regardless of slice order.
 	multi := []config.Rewrite{{From: "/data", To: "/A"}, {From: "/data/media", To: "/B"}}
-	if got := ApplyRewrites("/data/media/x", multi); got != "/A/media/x" {
-		t.Fatalf("first-match: got %q", got)
+	if got := ApplyRewrites("/data/media/x", multi); got != "/B/x" {
+		t.Fatalf("most-specific: got %q, want %q", got, "/B/x")
+	}
+	// Broad rule still applies when it is the only/longest match.
+	if got := ApplyRewrites("/data/other/f.mkv", multi); got != "/A/other/f.mkv" {
+		t.Fatalf("broad-fallback: got %q, want %q", got, "/A/other/f.mkv")
 	}
 	if got := ApplyRewrites("/data/media/x", nil); got != "/data/media/x" {
 		t.Fatalf("nil rewrites: got %q", got)
+	}
+
+	// Broad-first ordering: specific nested rewrite wins even when listed after
+	// the broad one. This is the shadowing bug that was fixed.
+	shadowRewrites := []config.Rewrite{
+		{From: "/data", To: "/x"},
+		{From: "/data/media/tv", To: "/library/tv"},
+	}
+	if got := ApplyRewrites("/data/media/tv/Show/S01E01.mkv", shadowRewrites); got != "/library/tv/Show/S01E01.mkv" {
+		t.Fatalf("shadow specific: got %q, want %q", got, "/library/tv/Show/S01E01.mkv")
+	}
+	if got := ApplyRewrites("/data/other/f.mkv", shadowRewrites); got != "/x/other/f.mkv" {
+		t.Fatalf("shadow broad: got %q, want %q", got, "/x/other/f.mkv")
 	}
 
 	// Segment-boundary matching: a sibling dir sharing the prefix must NOT match.
