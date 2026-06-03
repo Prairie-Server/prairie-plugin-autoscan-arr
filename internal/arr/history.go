@@ -2,6 +2,7 @@ package arr
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"time"
 )
@@ -22,6 +23,13 @@ const maxLookback = 24 * time.Hour
 // second granularity).
 const overlap = 1 * time.Minute
 
+// historyPageSize is the number of records requested per page. A single page
+// of 200 records stays well under the 1 MiB per-page body cap.
+const historyPageSize = 200
+
+// maxHistoryPages caps the total pages fetched per poll to bound work.
+const maxHistoryPages = 50
+
 // historyRecord is the subset of an arr history entry we care about.
 type historyRecord struct {
 	EventType string    `json:"eventType"`
@@ -31,6 +39,14 @@ type historyRecord struct {
 		Path         string `json:"path"`         // *FileRenamed: new path
 		SourcePath   string `json:"sourcePath"`   // *FileRenamed: old path
 	} `json:"data"`
+}
+
+// historyPage is the paged envelope returned by GET /api/v3/history.
+type historyPage struct {
+	Page         int             `json:"page"`
+	PageSize     int             `json:"pageSize"`
+	TotalRecords int             `json:"totalRecords"`
+	Records      []historyRecord `json:"records"`
 }
 
 // ChangedPaths returns file paths whose library folder should be rescanned:
@@ -44,6 +60,13 @@ type historyRecord struct {
 // avoid missing boundary events. newest is the most recent history timestamp
 // observed (or the effective since when no records returned), suitable as the
 // next marker. Credentials are passed per call; the plugin stores none.
+//
+// History is fetched via the paginated GET /api/v3/history endpoint
+// (sortKey=date, sortDirection=descending) to avoid 1 MiB body truncation on
+// bulk imports. Paging stops as soon as a record with date <= querySince is
+// encountered (records are date-descending; anything older is already seen).
+// Only records strictly newer than the caller's original marker are emitted to
+// avoid re-emitting the boundary record on every poll.
 func ChangedPaths(ctx context.Context, baseURL, apiKey string, since time.Time) (paths []string, newest time.Time, err error) {
 	now := time.Now().UTC()
 	marker := since.UTC() // caller's original marker (may be zero); the returned marker must never regress below it
@@ -71,41 +94,74 @@ func ChangedPaths(ctx context.Context, baseURL, apiKey string, since time.Time) 
 	if since.Before(floor) {
 		since = floor
 	}
-	since = since.Add(-overlap)
+	querySince := since.Add(-overlap)
 
 	c := newClient(baseURL, apiKey, nil)
-	q := url.Values{}
-	q.Set("date", since.Format(time.RFC3339))
-
-	var records []historyRecord
-	if err := c.getJSON(ctx, "/api/v3/history/since?"+q.Encode(), &records); err != nil {
-		return nil, time.Time{}, err
-	}
 
 	// Seed from the (rewound) query window but never report a marker older than
 	// the caller's original marker — otherwise an empty poll would creep the
 	// window back by the overlap each time and re-emit the same paths.
-	newest = since
+	newest = querySince
 	if marker.After(newest) {
 		newest = marker
 	}
-	for _, rec := range records {
-		if rec.Date.After(newest) {
-			newest = rec.Date.UTC()
+
+	for page := 1; page <= maxHistoryPages; page++ {
+		q := url.Values{}
+		q.Set("page", fmt.Sprintf("%d", page))
+		q.Set("pageSize", fmt.Sprintf("%d", historyPageSize))
+		q.Set("sortKey", "date")
+		q.Set("sortDirection", "descending")
+
+		var pg historyPage
+		if err := c.getJSON(ctx, "/api/v3/history?"+q.Encode(), &pg); err != nil {
+			return nil, time.Time{}, err
 		}
-		switch rec.EventType {
-		case eventImported:
-			if rec.Data.ImportedPath != "" {
-				paths = append(paths, rec.Data.ImportedPath)
+
+		done := false
+		for _, rec := range pg.Records {
+			// Records are date-descending. Once we hit a record at or before the
+			// query window start, everything remaining is already-seen history.
+			if !rec.Date.After(querySince) {
+				done = true
+				break
 			}
-		case eventEpisodeRenamed, eventMovieRenamed:
-			if rec.Data.Path != "" {
-				paths = append(paths, rec.Data.Path)
+
+			// Track the newest timestamp seen across all pages.
+			if rec.Date.After(newest) {
+				newest = rec.Date.UTC()
 			}
-			if rec.Data.SourcePath != "" {
-				paths = append(paths, rec.Data.SourcePath)
+
+			// Only EMIT records strictly newer than the caller's original marker
+			// to avoid re-emitting the boundary record on every poll (Fix 2).
+			if !rec.Date.After(marker) {
+				continue
 			}
+
+			switch rec.EventType {
+			case eventImported:
+				if rec.Data.ImportedPath != "" {
+					paths = append(paths, rec.Data.ImportedPath)
+				}
+			case eventEpisodeRenamed, eventMovieRenamed:
+				if rec.Data.Path != "" {
+					paths = append(paths, rec.Data.Path)
+				}
+				if rec.Data.SourcePath != "" {
+					paths = append(paths, rec.Data.SourcePath)
+				}
+			}
+		}
+
+		if done {
+			break
+		}
+
+		// If we received fewer records than a full page, there are no more pages.
+		if len(pg.Records) < historyPageSize {
+			break
 		}
 	}
+
 	return paths, newest, nil
 }

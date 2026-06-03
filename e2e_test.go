@@ -31,10 +31,15 @@ func TestEndToEndPollChangesOverGRPC(t *testing.T) {
 		case gotAPIKey <- r.Header.Get("X-Api-Key"):
 		default:
 		}
-		_, _ = w.Write([]byte(`[
-		  {"eventType":"downloadFolderImported","data":{"importedPath":"` + importedPath + `"}},
-		  {"eventType":"grabbed","data":{"importedPath":"/ignored"}}
-		]`))
+		// Compute a fresh "just now" date on every request so the record always falls
+		// within the paged query window (querySince = now - overlap) regardless of how
+		// long the binary build took before the first poll arrives.
+		freshDate := time.Now().UTC().Add(-10 * time.Second).Format(time.RFC3339)
+		// Return the paged envelope that the plugin now expects from /api/v3/history.
+		_, _ = w.Write([]byte(`{"page":1,"pageSize":200,"totalRecords":2,"records":[
+		  {"eventType":"downloadFolderImported","date":"` + freshDate + `","data":{"importedPath":"` + importedPath + `"}},
+		  {"eventType":"grabbed","date":"` + freshDate + `","data":{"importedPath":"/ignored"}}
+		]}`))
 	}))
 	defer stub.Close()
 
