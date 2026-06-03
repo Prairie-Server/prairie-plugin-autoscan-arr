@@ -52,6 +52,19 @@ func ChangedPaths(ctx context.Context, baseURL, apiKey string, since time.Time) 
 	}
 	since = since.UTC()
 
+	// Clamp a future-dated marker to now. Clock skew (host/arr on different
+	// machines) can produce a since > now; leaving it in the future would push
+	// the query window ahead of wall-clock, skipping real events until wall-clock
+	// catches up. We clamp both the effective query since and the marker used as
+	// the returned-value floor, so a future caller marker cannot propagate into
+	// the returned newest value.
+	if since.After(now) {
+		since = now
+	}
+	if marker.After(now) {
+		marker = now
+	}
+
 	// Clamp to the max-lookback floor, then subtract the overlap buffer. This
 	// only widens the QUERY window; the RETURNED marker is floored separately.
 	floor := now.Add(-maxLookback)

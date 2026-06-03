@@ -9,6 +9,54 @@ import (
 	"time"
 )
 
+// TestChangedPathsFutureDateMarker verifies that a caller marker in the future
+// (e.g. from host/arr clock skew) is clamped to <= now so the query window
+// captures real events rather than sitting in the future.
+func TestChangedPathsFutureDateMarker(t *testing.T) {
+	now := time.Now().UTC()
+
+	// An import that happened 5 minutes ago — should be found.
+	importDate := now.Add(-5 * time.Minute).Truncate(time.Second)
+	body := `[{"eventType":"downloadFolderImported","date":"` + importDate.Format(time.RFC3339) + `","data":{"importedPath":"/mnt/media/Show/S01/E01.mkv"}}]`
+
+	var gotDate string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotDate = r.URL.Query().Get("date")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	// Caller marker is 2 hours in the future (simulating clock skew).
+	futureMarker := now.Add(2 * time.Hour)
+	paths, newest, err := ChangedPaths(context.Background(), srv.URL, "k", futureMarker)
+	if err != nil {
+		t.Fatalf("ChangedPaths: %v", err)
+	}
+
+	// The query date sent to arr must be <= now (clamped, then overlap-rewound).
+	parsed, err := time.Parse(time.RFC3339, gotDate)
+	if err != nil {
+		t.Fatalf("parse date %q: %v", gotDate, err)
+	}
+	if parsed.After(now) {
+		t.Fatalf("query date %v is in the future (> now %v); future marker was not clamped", parsed, now)
+	}
+
+	// The import (5m ago) must be in the returned paths because the query window
+	// was correctly clamped to cover it.
+	if len(paths) == 0 {
+		t.Fatal("expected at least one path; import was missed because query window was in the future")
+	}
+	if paths[0] != "/mnt/media/Show/S01/E01.mkv" {
+		t.Fatalf("unexpected path %q", paths[0])
+	}
+
+	// The returned marker must not be in the future.
+	if newest.After(now.Add(time.Minute)) {
+		t.Fatalf("returned marker %v is in the future (now=%v)", newest, now)
+	}
+}
+
 func TestChangedPaths(t *testing.T) {
 	// imports contribute importedPath; renames contribute both new path and old
 	// sourcePath; unrelated events (grabbed, episodeFileDeleted) are ignored.
