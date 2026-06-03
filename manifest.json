@@ -1,0 +1,29 @@
+{
+  "plugin_id": "silo.autoscan.arr",
+  "version": "0.1.0",
+  "checksum": "__CHECKSUM__",
+  "silo_api_version": "v1",
+  "supported_platforms": [
+    {
+      "os": "linux",
+      "arch": "amd64"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64"
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64"
+    }
+  ],
+  "capabilities": [
+    {
+      "type": "scan_source.v1",
+      "id": "arr",
+      "display_name": "Sonarr / Radarr",
+      "description": "Triggers Silo rescans from Sonarr/Radarr import and rename history."
+    }
+  ],
+  "global_config_schema": []
+}
