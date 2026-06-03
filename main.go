@@ -64,9 +64,11 @@ func (s *scanSourceServer) PollChanges(ctx context.Context, req *pluginv1.PollCh
 
 	var since time.Time // zero => history client floors to "now"
 	if m := req.GetMarker(); m != "" {
-		if t, err := time.Parse(time.RFC3339, m); err == nil {
-			since = t
+		t, err := time.Parse(time.RFC3339, m)
+		if err != nil {
+			return nil, fmt.Errorf("scan_source: invalid marker %q: %w", m, err)
 		}
+		since = t
 	}
 
 	raw, newest, err := arr.ChangedPaths(ctx, conn.GetBaseUrl(), conn.GetApiKey(), since)
