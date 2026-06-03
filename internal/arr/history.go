@@ -46,12 +46,14 @@ type historyRecord struct {
 // next marker. Credentials are passed per call; the plugin stores none.
 func ChangedPaths(ctx context.Context, baseURL, apiKey string, since time.Time) (paths []string, newest time.Time, err error) {
 	now := time.Now().UTC()
+	marker := since.UTC() // caller's original marker (may be zero); the returned marker must never regress below it
 	if since.IsZero() {
 		since = now
 	}
 	since = since.UTC()
 
-	// Clamp to the max-lookback floor, then subtract the overlap buffer.
+	// Clamp to the max-lookback floor, then subtract the overlap buffer. This
+	// only widens the QUERY window; the RETURNED marker is floored separately.
 	floor := now.Add(-maxLookback)
 	if since.Before(floor) {
 		since = floor
@@ -67,7 +69,13 @@ func ChangedPaths(ctx context.Context, baseURL, apiKey string, since time.Time) 
 		return nil, time.Time{}, err
 	}
 
+	// Seed from the (rewound) query window but never report a marker older than
+	// the caller's original marker — otherwise an empty poll would creep the
+	// window back by the overlap each time and re-emit the same paths.
 	newest = since
+	if marker.After(newest) {
+		newest = marker
+	}
 	for _, rec := range records {
 		if rec.Date.After(newest) {
 			newest = rec.Date.UTC()

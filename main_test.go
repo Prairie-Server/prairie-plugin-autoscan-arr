@@ -100,25 +100,73 @@ func TestPollChangesSecondCallUsesReturnedMarker(t *testing.T) {
 		t.Fatal("expected a marker from the first poll")
 	}
 
-	if _, err := s.PollChanges(context.Background(), &pluginv1.PollChangesRequest{
+	second, err := s.PollChanges(context.Background(), &pluginv1.PollChangesRequest{
 		Connection: conn,
 		Marker:     marker,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("second PollChanges: %v", err)
 	}
 
 	if len(dates) != 2 {
 		t.Fatalf("expected 2 arr requests, got %d", len(dates))
 	}
-	// The second poll's date must derive from the marker (minus the overlap
-	// buffer), i.e. close to the 2026-06-01T10:00:00Z history timestamp.
-	second, err := time.Parse(time.RFC3339, dates[1])
+
+	markerTime, err := time.Parse(time.RFC3339, marker)
 	if err != nil {
-		t.Fatalf("parse second date %q: %v", dates[1], err)
+		t.Fatalf("parse first marker %q: %v", marker, err)
 	}
-	markerTime, _ := time.Parse(time.RFC3339, marker)
-	if second.After(markerTime) {
-		t.Fatalf("second poll date %v should be <= marker %v (overlap rewind)", second, markerTime)
+
+	// The QUERY window legitimately rewinds by the overlap buffer so boundary
+	// events are not missed.
+	queryDate, err := time.Parse(time.RFC3339, dates[1])
+	if err != nil {
+		t.Fatalf("parse second query date %q: %v", dates[1], err)
+	}
+	if queryDate.After(markerTime) {
+		t.Fatalf("second poll query date %v should be <= marker %v (overlap rewind)", queryDate, markerTime)
+	}
+
+	// The RETURNED marker must NOT regress below the caller's marker, even
+	// though the query window rewound by the overlap.
+	secondMarker, err := time.Parse(time.RFC3339, second.GetNextMarker())
+	if err != nil {
+		t.Fatalf("parse second marker %q: %v", second.GetNextMarker(), err)
+	}
+	if secondMarker.Before(markerTime) {
+		t.Fatalf("returned marker regressed: %v < caller marker %v", secondMarker, markerTime)
+	}
+}
+
+func TestPollChangesEmptyPollDoesNotRegressMarker(t *testing.T) {
+	// An idle source returns no history. The returned marker must not creep
+	// backward by the overlap buffer; it must stay >= the caller's marker.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	s := &scanSourceServer{rt: &runtimeServer{cfg: &config.Config{}}}
+	conn := &pluginv1.ResolvedConnection{BaseUrl: srv.URL, ApiKey: "k"}
+
+	prev := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+	resp, err := s.PollChanges(context.Background(), &pluginv1.PollChangesRequest{
+		Connection: conn,
+		Marker:     prev.Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("PollChanges: %v", err)
+	}
+	if len(resp.GetChangedPaths()) != 0 {
+		t.Fatalf("expected no changed paths, got %v", resp.GetChangedPaths())
+	}
+
+	got, err := time.Parse(time.RFC3339, resp.GetNextMarker())
+	if err != nil {
+		t.Fatalf("parse returned marker %q: %v", resp.GetNextMarker(), err)
+	}
+	if got.Before(prev) {
+		t.Fatalf("empty-poll marker regressed: got %v, want >= caller marker %v (not prev-overlap)", got, prev)
 	}
 }
 
