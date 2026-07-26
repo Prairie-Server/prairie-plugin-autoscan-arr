@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/hashicorp/go-plugin v1.8.0
-	github.com/prairie-server/prairie-plugin-sdk v0.12.1-0.20260726223239-3c6de05cade7
+	github.com/prairie-server/prairie-plugin-sdk v0.12.1-0.20260726225228-1dfb0aebf7e0
 )
 
 require (
