@@ -7,7 +7,7 @@ func TestEmbeddedManifestLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadManifest: %v", err)
 	}
-	if m.GetPluginId() != "silo.autoscan.arr" {
+	if m.GetPluginId() != "prairie.autoscan.arr" {
 		t.Fatalf("plugin_id = %q", m.GetPluginId())
 	}
 	if len(m.GetCapabilities()) != 1 || m.GetCapabilities()[0].GetType() != "scan_source.v1" {

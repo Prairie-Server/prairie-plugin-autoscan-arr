@@ -1,14 +1,14 @@
-# silo-plugin-autoscan-arr
+# prairie-plugin-autoscan-arr
 
-A Silo plugin that implements the **`scan_source.v1`** capability for **Sonarr / Radarr**.
-When Silo's host polls it, the plugin reads the arr instance's recent history,
+A Prairie plugin that implements the **`scan_source.v1`** capability for **Sonarr / Radarr**.
+When Prairie's host polls it, the plugin reads the arr instance's recent history,
 extracts imported and renamed file paths, and hands the **raw arr-side paths** back to
 the host. The host applies any configured path rewrites and triggers targeted library
 rescans.
 
 ## How it works
 
-Silo's host owns the polling timer and calls `PollChanges(marker, connection)` on
+Prairie's host owns the polling timer and calls `PollChanges(marker, connection)` on
 each tick. The plugin:
 
 1. Reads the resolved arr `{base_url, api_key}` from `PollChangesRequest.connection`
@@ -45,8 +45,8 @@ go test -tags integration ./...   # spawns the real binary over go-plugin gRPC
 
 ## Status
 
-Depends on `silo-plugin-sdk` ≥ the release that adds `scan_source.v1` with the
+Depends on `prairie-plugin-sdk` ≥ the release that adds `scan_source.v1` with the
 `connection` field on `PollChangesRequest` and `source_paths` on `PollChangesResponse`.
 `go.mod` depends on the SDK via a pseudo-version (no local `replace`); bump it to a
-tagged release once one is published. Catalog registration in `silo-plugins` is a
+tagged release once one is published. Catalog registration in `prairie-plugins` is a
 separate step.

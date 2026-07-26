@@ -1,4 +1,4 @@
-// Command silo-plugin-autoscan-arr implements the Silo scan_source.v1 capability
+// Command prairie-plugin-autoscan-arr implements the Prairie scan_source.v1 capability
 // for Sonarr/Radarr. On each host poll it reads the arr /history endpoint,
 // extracts imported + renamed file paths, and returns the raw arr-side paths
 // plus an opaque marker. Path rewrites are applied by the host; the plugin has
@@ -17,11 +17,11 @@ import (
 	"fmt"
 	"os"
 
-	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
-	publicmanifest "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/manifest"
-	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtime"
+	pluginv1 "github.com/prairie-server/prairie-plugin-sdk/pkg/pluginproto/prairie/plugin/v1"
+	publicmanifest "github.com/prairie-server/prairie-plugin-sdk/pkg/pluginsdk/manifest"
+	"github.com/prairie-server/prairie-plugin-sdk/pkg/pluginsdk/runtime"
 
-	"github.com/Silo-Server/silo-plugin-autoscan-arr/internal/arr"
+	"github.com/prairie-server/prairie-plugin-autoscan-arr/internal/arr"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".

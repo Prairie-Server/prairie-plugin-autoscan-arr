@@ -1,7 +1,7 @@
 //go:build integration
 
 // End-to-end test: builds the real plugin binary, spawns it over go-plugin
-// (the same handshake silo's host uses), and drives PollChanges across the
+// (the same handshake prairie's host uses), and drives PollChanges across the
 // gRPC boundary against a stub arr — exercising the scan_source.v1 contract
 // including the resolved-connection delivery. Run: go test -tags integration .
 package main
@@ -17,8 +17,8 @@ import (
 
 	plugin "github.com/hashicorp/go-plugin"
 
-	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
-	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtime"
+	pluginv1 "github.com/prairie-server/prairie-plugin-sdk/pkg/pluginproto/prairie/plugin/v1"
+	"github.com/prairie-server/prairie-plugin-sdk/pkg/pluginsdk/runtime"
 )
 
 func TestEndToEndPollChangesOverGRPC(t *testing.T) {
