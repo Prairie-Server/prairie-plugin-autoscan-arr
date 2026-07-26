@@ -1,19 +1,19 @@
 {
-  "plugin_id": "silo.autoscan.arr",
+  "plugin_id": "prairie.autoscan.arr",
   "version": "0.1.0",
   "checksum": "__CHECKSUM__",
-  "silo_api_version": "v1",
+  "prairie_api_version": "v1",
   "presentation": {
     "display_name": "Sonarr & Radarr Autoscan",
-    "summary": "Detect imports and renames in Sonarr or Radarr and queue targeted Silo scans.",
-    "description_markdown": "Polls recent Sonarr and Radarr history for completed imports and file renames. It returns the affected paths to Silo so the host can apply path rewrites, deduplicate work, and scan only the relevant library locations.",
-    "setup_markdown": "Install the plugin, then create an Autoscan source in Silo using a Sonarr or Radarr connection. Configure any path rewrites on the Silo source. The plugin stores no credentials and has no separate global configuration.",
-    "homepage_url": "https://github.com/Silo-Server/silo-plugin-autoscan-arr",
-    "source_url": "https://github.com/Silo-Server/silo-plugin-autoscan-arr",
-    "support_url": "https://github.com/Silo-Server/silo-plugin-autoscan-arr/issues",
-    "changelog_url": "https://github.com/Silo-Server/silo-plugin-autoscan-arr/releases",
-    "publisher_name": "Silo",
-    "publisher_url": "https://github.com/Silo-Server",
+    "summary": "Detect imports and renames in Sonarr or Radarr and queue targeted Prairie scans.",
+    "description_markdown": "Polls recent Sonarr and Radarr history for completed imports and file renames. It returns the affected paths to Prairie so the host can apply path rewrites, deduplicate work, and scan only the relevant library locations.",
+    "setup_markdown": "Install the plugin, then create an Autoscan source in Prairie using a Sonarr or Radarr connection. Configure any path rewrites on the Prairie source. The plugin stores no credentials and has no separate global configuration.",
+    "homepage_url": "https://github.com/prairie-server/prairie-plugin-autoscan-arr",
+    "source_url": "https://github.com/prairie-server/prairie-plugin-autoscan-arr",
+    "support_url": "https://github.com/prairie-server/prairie-plugin-autoscan-arr/issues",
+    "changelog_url": "https://github.com/prairie-server/prairie-plugin-autoscan-arr/releases",
+    "publisher_name": "Prairie",
+    "publisher_url": "https://github.com/prairie-server",
     "license_spdx": "NOASSERTION"
   },
   "supported_platforms": [
@@ -35,7 +35,7 @@
       "type": "scan_source.v1",
       "id": "arr",
       "display_name": "Sonarr / Radarr",
-      "description": "Triggers Silo rescans from Sonarr/Radarr import and rename history."
+      "description": "Triggers Prairie rescans from Sonarr/Radarr import and rename history."
     }
   ],
   "global_config_schema": []

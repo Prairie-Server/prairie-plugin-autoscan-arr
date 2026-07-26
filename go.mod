@@ -1,10 +1,10 @@
-module github.com/Silo-Server/silo-plugin-autoscan-arr
+module github.com/prairie-server/prairie-plugin-autoscan-arr
 
 go 1.26.3
 
 require (
-	github.com/Silo-Server/silo-plugin-sdk v0.10.0
 	github.com/hashicorp/go-plugin v1.8.0
+	github.com/prairie-server/prairie-plugin-sdk v0.12.1-0.20260726223239-3c6de05cade7
 )
 
 require (
