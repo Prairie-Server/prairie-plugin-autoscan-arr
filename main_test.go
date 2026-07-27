@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -281,6 +282,37 @@ func TestLoadManifestAppliesVersion(t *testing.T) {
 	}
 	if m.GetChecksum() == "" {
 		t.Fatal("expected checksum")
+	}
+}
+
+func TestLoadManifestErrorPaths(t *testing.T) {
+	originalManifest := manifestJSON
+	manifestJSON = []byte(`{`)
+	if _, err := loadManifest(); err == nil {
+		t.Fatal("expected invalid manifest error")
+	}
+	manifestJSON = originalManifest
+
+	originalExecutable := osExecutable
+	osExecutable = func() (string, error) {
+		return "", errors.New("no executable")
+	}
+	if _, err := loadManifest(); err == nil {
+		t.Fatal("expected executable error")
+	}
+	osExecutable = originalExecutable
+
+	originalReadFile := osReadFile
+	osReadFile = func(string) ([]byte, error) {
+		return nil, errors.New("read failed")
+	}
+	t.Cleanup(func() {
+		manifestJSON = originalManifest
+		osExecutable = originalExecutable
+		osReadFile = originalReadFile
+	})
+	if _, err := loadManifest(); err == nil {
+		t.Fatal("expected read executable error")
 	}
 }
 

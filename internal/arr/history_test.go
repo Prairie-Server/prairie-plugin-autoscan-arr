@@ -560,4 +560,9 @@ func TestGetJSONErrorPaths(t *testing.T) {
 	if err := c.getJSON(context.Background(), "/api/v3/history", &struct{}{}); err == nil {
 		t.Fatal("expected request failure")
 	}
+
+	c = newClient("http://example.com/%zz", "k", nil)
+	if err := c.getJSON(context.Background(), "", &struct{}{}); err == nil {
+		t.Fatal("expected request creation error")
+	}
 }
