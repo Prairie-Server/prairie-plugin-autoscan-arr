@@ -506,3 +506,58 @@ func TestChangedPathsPageCapBoundsWork(t *testing.T) {
 		t.Fatalf("expected paging to stop at %d pages, got %d", maxHistoryPages, len(pagesSeen))
 	}
 }
+
+func TestParseMarkerEmptyAndInvalidID(t *testing.T) {
+	m, err := ParseMarker("")
+	if err != nil {
+		t.Fatalf("empty marker: %v", err)
+	}
+	if !m.Date.IsZero() || m.ID != 0 {
+		t.Fatalf("empty marker = %+v", m)
+	}
+
+	ts := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	if _, err := ParseMarker(ts + "|not-an-id"); err == nil {
+		t.Fatal("expected error for non-numeric id")
+	}
+	if _, err := ParseMarker("not-rfc3339"); err == nil {
+		t.Fatal("expected error for bad timestamp")
+	}
+}
+
+func TestGetJSONErrorPaths(t *testing.T) {
+	c := newClient("", "key", nil)
+	if err := c.getJSON(context.Background(), "/x", &struct{}{}); err == nil {
+		t.Fatal("expected error for empty base url")
+	}
+	c = newClient("http://example.invalid", "", nil)
+	if err := c.getJSON(context.Background(), "/x", &struct{}{}); err == nil {
+		t.Fatal("expected error for empty api key")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	c = newClient(srv.URL, "k", srv.Client())
+	if err := c.getJSON(context.Background(), "/api/v3/history", &struct{}{}); err == nil {
+		t.Fatal("expected HTTP error")
+	}
+
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{not-json`))
+	}))
+	defer bad.Close()
+	c = newClient(bad.URL, "k", bad.Client())
+	if err := c.getJSON(context.Background(), "/api/v3/history", &struct{}{}); err == nil {
+		t.Fatal("expected decode error")
+	}
+
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	url := down.URL
+	down.Close()
+	c = newClient(url, "k", &http.Client{Timeout: 50 * time.Millisecond})
+	if err := c.getJSON(context.Background(), "/api/v3/history", &struct{}{}); err == nil {
+		t.Fatal("expected request failure")
+	}
+}

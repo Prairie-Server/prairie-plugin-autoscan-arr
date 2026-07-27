@@ -248,3 +248,54 @@ func TestPollChangesEmptyMarkerSucceeds(t *testing.T) {
 	var dummy interface{}
 	_ = json.Unmarshal([]byte(`{}`), &dummy)
 }
+
+func TestRuntimeGetManifestAndConfigure(t *testing.T) {
+	m, err := loadManifest()
+	if err != nil {
+		t.Fatalf("loadManifest: %v", err)
+	}
+	rt := &runtimeServer{manifest: m}
+	resp, err := rt.GetManifest(context.Background(), &pluginv1.GetManifestRequest{})
+	if err != nil {
+		t.Fatalf("GetManifest: %v", err)
+	}
+	if resp.GetManifest().GetPluginId() != "prairie.autoscan.arr" {
+		t.Fatalf("plugin_id = %q", resp.GetManifest().GetPluginId())
+	}
+	if _, err := rt.Configure(context.Background(), &pluginv1.ConfigureRequest{}); err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+}
+
+func TestLoadManifestAppliesVersion(t *testing.T) {
+	prev := version
+	version = "9.9.9-test"
+	t.Cleanup(func() { version = prev })
+
+	m, err := loadManifest()
+	if err != nil {
+		t.Fatalf("loadManifest: %v", err)
+	}
+	if m.GetVersion() != "9.9.9-test" {
+		t.Fatalf("version = %q, want 9.9.9-test", m.GetVersion())
+	}
+	if m.GetChecksum() == "" {
+		t.Fatal("expected checksum")
+	}
+}
+
+func TestPollChangesArrHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	s := &scanSourceServer{}
+	_, err := s.PollChanges(context.Background(), &pluginv1.PollChangesRequest{
+		Connection: &pluginv1.ResolvedConnection{BaseUrl: srv.URL, ApiKey: "k"},
+		Marker:     time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+	})
+	if err == nil {
+		t.Fatal("expected error from arr HTTP 500")
+	}
+}
