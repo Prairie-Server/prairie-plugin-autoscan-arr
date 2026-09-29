@@ -50,7 +50,7 @@ go test -tags integration ./...   # spawns the real binary over go-plugin gRPC
 
 The plugin consumes `prairie-plugin-sdk` as a Go module dependency (currently a
 pseudo-version; bump it to a tagged release once one is published). Local
-multi-repository work may use `go.work`, but release and CI builds run with
+multi-repository work may use `go.work`, but release builds and CI tests run with
 `GOWORK=off`; do not commit a local filesystem `replace` directive.
 
 ## Contributing

@@ -19,7 +19,8 @@ scheduling and scan behavior belong in
 
 Use the Go version declared in `go.mod`. A local `go.work` may point at a sibling
 SDK checkout while developing both repositories, but committed code and CI must
-resolve the tagged SDK dependency with `GOWORK=off`. Never commit a local
+resolve the SDK version pinned in `go.mod` (a release tag or a pseudo-version
+of the SDK's `main` branch) with `GOWORK=off`. Never commit a local
 filesystem `replace` directive.
 
 ## Validate your change
@@ -30,6 +31,9 @@ GOWORK=off go test -tags integration ./...
 GOWORK=off go vet ./...
 GOWORK=off go build ./...
 gofmt -l .
+golangci-lint run ./...
+GOWORK=off go test ./... -count=1 -covermode=atomic -coverprofile=coverage.out
+./scripts/check-coverage.sh coverage.out
 ```
 
 `gofmt -l .` should print nothing. If it reports unrelated pre-existing drift,
@@ -37,6 +41,9 @@ none of the Go files touched by your change may appear in the output; do not add
 to the output, and report what remains. Add focused coverage for cursor
 ordering, history pagination, event filtering, credential handling, and path
 extraction when those behaviors change.
+CI runs golangci-lint v2.14.0 and enforces a 95% statement coverage floor
+(`scripts/check-coverage.sh`); the lint and coverage commands above reproduce
+those checks locally.
 
 ## Open the pull request
 
