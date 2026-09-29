@@ -63,7 +63,7 @@ func (c *client) getJSON(ctx context.Context, path string, dest any) error {
 	if err != nil {
 		return fmt.Errorf("arr: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
